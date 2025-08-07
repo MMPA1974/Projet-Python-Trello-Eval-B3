@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de Bord du Projet Python</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: A single-page dashboard is chosen for its directness and ease of navigation. The structure is as follows: 1. Header with project title. 2. A summary section with key metrics (total tasks, tasks by status) for a quick overview. 3. A visual timeline (Gantt-like chart) to display the project schedule and task durations. 4. A detailed task exploration section, allowing users to filter tasks by list and view individual card details. This structure facilitates a top-down exploration, from general summary to specific details, which is highly intuitive for project management. -->
+    <!-- Visualization & Content Choices: Report Info: Task counts per list -> Goal: Show distribution -> Viz: Donut Chart (Chart.js) -> Interaction: Hover to see details -> Justification: Quick visual comparison of workload. Report Info: Task start/end dates -> Goal: Show project schedule -> Viz: Horizontal Bar Chart (Gantt-style, Chart.js) -> Interaction: Hover for exact dates -> Justification: Clearly visualizes task duration and overlap. Report Info: Card details -> Goal: Organize and allow exploration -> Viz: Interactive Accordion/Card list -> Interaction: Click to expand/collapse, filter by list -> Justification: Manages information density and allows users to focus on specific areas. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #fdfbf7;
+            color: #4a4a4a;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 350px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+                max-height: 400px;
+            }
+        }
+        .gantt-container {
+            position: relative;
+            width: 100%;
+            height: 600px;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+        }
+        .nav-button.active {
+            background-color: #d8c4b7;
+            color: #ffffff;
+        }
+        .nav-button:not(.active):hover {
+            background-color: #e9e2de;
+        }
+        .card-header {
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .card-header:hover {
+            background-color: #f3eee9;
+        }
+        .checklist-item {
+            display: flex;
+            align-items: flex-start; /* Align items to the start for better checkbox alignment */
+            margin-bottom: 8px; /* Add some space between items */
+        }
+        .checklist-item-box {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d8c4b7;
+            margin-right: 12px;
+            flex-shrink: 0;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .checklist-item input[type="checkbox"] {
+            appearance: none; /* Hide default checkbox */
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d8c4b7;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            flex-shrink: 0;
+            margin-right: 12px;
+        }
+        .checklist-item input[type="checkbox"]:checked {
+            background-color: #d8c4b7;
+            border-color: #d8c4b7;
+        }
+        .checklist-item input[type="checkbox"]:checked::after {
+            content: '✔'; /* Checkmark character */
+            color: white;
+            font-size: 12px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .checklist-details-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .checklist-details-content.expanded {
+            max-height: 500px; /* Arbitrary large value to allow expansion */
+            transition: max-height 0.5s ease-in;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-bold text-[#6d5d52]">Projet Python</h1>
+            <p class="text-lg text-gray-600 mt-2">Tableau de bord interactif</p>
+        </header>
+
+        <nav class="flex justify-center mb-10 bg-white p-2 rounded-full shadow-sm max-w-lg mx-auto">
+            <button data-section="dashboard" class="nav-button active px-4 py-2 rounded-full text-sm font-semibold w-1/3">Vue d'ensemble</button>
+            <button data-section="timeline" class="nav-button px-4 py-2 rounded-full text-sm font-semibold w-1/3">Chronologie</button>
+            <button data-section="tasks" class="nav-button px-4 py-2 rounded-full text-sm font-semibold w-1/3">Tâches</button>
+        </nav>
+
+        <main>
+            <section id="dashboard" class="space-y-8">
+                <div class="text-center mb-12">
+                     <h2 class="text-2xl font-bold text-[#6d5d52] mb-2">Aperçu du Projet</h2>
+                     <p class="text-gray-600 max-w-2xl mx-auto">Cette section fournit une synthèse visuelle de l'état actuel du projet. Vous y trouverez les métriques clés, la répartition des tâches par statut et leur état d'avancement général pour une compréhension rapide de la progression.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-500">Total des Tâches</h3>
+                        <p id="total-tasks" class="text-4xl font-bold text-[#d8c4b7]">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-500">À Faire</h3>
+                        <p id="todo-tasks" class="text-4xl font-bold text-[#d8c4b7]">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-500">En Cours</h3>
+                        <p id="inprogress-tasks" class="text-4xl font-bold text-[#d8c4b7]">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-500">Terminées</h3>
+                        <p id="done-tasks" class="text-4xl font-bold text-[#d8c4b7]">0</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-xl font-bold text-center mb-4 text-[#6d5d52]">Répartition des Tâches par Liste</h3>
+                        <div class="chart-container">
+                            <canvas id="tasksByListChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md overflow-hidden">
+                        <h3 class="text-xl font-bold text-center mb-4 text-[#6d5d52]">Avancement des Checklists</h3>
+                         <div id="checklist-progress-container" class="space-y-4 max-h-[400px] overflow-y-auto pr-2"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="timeline" class="hidden space-y-8">
+                <div class="text-center mb-12">
+                     <h2 class="text-2xl font-bold text-[#6d5d52] mb-2">Chronologie du Projet</h2>
+                     <p class="text-gray-600 max-w-2xl mx-auto">Visualisez le calendrier complet du projet. Cette chronologie de type Gantt montre la durée de chaque tâche, leurs dates de début et de fin, et met en évidence les chevauchements potentiels, vous aidant à mieux planifier et suivre les dépendances.</p>
+                </div>
+                <div class="bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                    <div class="gantt-container">
+                        <canvas id="ganttChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tasks" class="hidden space-y-8">
+                 <div class="text-center mb-12">
+                     <h2 class="text-2xl font-bold text-[#6d5d52] mb-2">Détail des Tâches</h2>
+                     <p class="text-gray-600 max-w-2xl mx-auto">Explorez chaque tâche individuellement. Utilisez les filtres pour naviguer entre les listes et cliquez sur une carte pour afficher sa description, ses dates, et ses checklists détaillées. C'est l'endroit idéal pour une gestion fine des éléments de travail.</p>
+                </div>
+                <div class="flex flex-wrap justify-center gap-2 mb-6">
+                    <button class="filter-btn bg-white px-4 py-2 rounded-full text-sm font-semibold shadow-sm" data-list="all">Toutes les listes</button>
+                </div>
+                <div id="task-list" class="space-y-4">
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const projectData = {
+            lists: [
+                { name: "Backlog", pos: 0.5 },
+                { name: "A faire", pos: 1 },
+                { name: "En cours", pos: 2 },
+                { name: "En attente", pos: 2.5 },
+                { name: "Test (Testing)", pos: 2.75 },
+                { name: "Bloqué", pos: 2.875 },
+                { name: "Terminé", pos: 3 },
+                { name: "Livré : Pour les tâches livrées et approuvées", pos: 65539 }
+            ],
+            cards: [
+                { id: "68949a83ff107f6f81eff82a", name: "01_Analyse des besoins et des objectifs du projet", list: "A faire", start: "2025-08-11T06:00:00.000Z", due: "2025-08-24T13:55:00.000Z", checklists: [ { name: "Analyse des besoins et des objectifs du projet", items: [ { name: "Examiner en détail les objectifs du document et les besoins commerciaux ou utilisateurs.", checked: false }, { name: "Clarifier les objectifs principaux du projet.", checked: false }, { name: "Identifier les parties prenantes clés et leurs attentes.", checked: false }, { name: "Évaluer l'impact du projet sur les activités commerciales ou les utilisateurs finaux.", checked: false }, { name: "Identifier les exigences fonctionnelles et non fonctionnelles du système.", checked: false }, { name: "Listez les fonctionnalités essentielles du système.", checked: false }, { name: "Définir les contraintes de performance, de sécurité et de convivialité.", checked: false }, { name: "Examiner les exigences réglementaires ou légales applicables.", checked: false }, { name: "Considérer les besoins en intégrations avec d'autres systèmes.", checked: false }, { name: "Prioriser les besoins et les objectifs en fonction de leur importance et de leur faisabilité.", checked: false }, { name: "Classez les besoins par ordre de priorité élevée, moyenne et faible.", checked: false }, { name: "Identifiez les éléments essentiels pour le lancement initial du projet.", checked: false }, { name: "Évaluez les dépendances entre les différentes exigences.", checked: false }, { name: "Organiser des réunions avec les parties prenantes pour discuter des besoins et des objectifs.", checked: false }, { name: "Documenter toutes les informations recueillies pour référence future.", checked: false }, { name: "Consulter les experts techniques pour évaluer la faisabilité des exigences.", checked: false }, { name: "Réviser et mettre à jour la checklist au besoin au fur et à mesure de l'avancement du projet.", checked: false } ] }, { name: "Critères de DoR", items: [ { name: "Les spécifications de la tâche sont clairement définies.", checked: false }, { name: "Toutes les ressources nécessaires sont disponibles.", checked: false }, { name: "Les dépendances éventuelles sont identifiées et traitées.", checked: false } ] }, { name: "Critères de DoD", items: [ { name: "La tâche a été développée, testée et validée.", checked: false }, { name: "La documentation associée a été mise à jour.", checked: false }, { name: "Tout problème rencontré a été résolu.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff828", name: "02_Élaboration d'un plan de développement", list: "A faire", start: "2025-08-25T06:00:00.000Z", due: "2025-09-07T15:22:00.000Z", checklists: [ { name: "Critères de DoR", items: [ { name: "Les spécifications de la tâche sont clairement définies.", checked: false }, { name: "Toutes les ressources nécessaires sont disponibles.", checked: false }, { name: "Les dépendances éventuelles sont identifiées et traitées.", checked: false } ] }, { name: "Élaboration d'un plan de développement", items: [ { name: "Définir les étapes clés du développement du projet", checked: false }, { name: "Identifier les phases principales du projet, de la conception à la livraison.", checked: false }, { name: "Déterminer les jalons importants pour marquer la fin de chaque phase.", checked: false }, { name: "Préciser les activités et les livrables associés à chaque étape.", checked: false }, { name: "Établir un calendrier et une répartition des ressources pour chaque étape.", checked: false }, { name: "Créer un planning détaillé indiquant les dates de début et de fin de chaque étape.", checked: false }, { name: "Allouer les ressources humaines nécessaires à chaque tâche ou phase.", checked: false }, { name: "Estimer les coûts associés à chaque étape du projet.", checked: false }, { name: "Identifier les risques potentiels et élaborer des stratégies d'atténuation.", checked: false }, { name: "Évaluer les obstacles possibles qui pourraient affecter le calendrier ou les ressources.", checked: false }, { name: "Développer des plans de contingence pour répondre aux risques identifiés.", checked: false }, { name: "Assigner des responsables pour surveiller et gérer les risques tout au long du projet.", checked: false }, { name: "Communiquer le plan de développement à toutes les parties prenantes concernées.", checked: false }, { name: "Organiser des réunions de présentation pour expliquer le plan et recueillir des commentaires.", checked: false }, { name: "Distribuer une version écrite du plan à tous les membres de l'équipe.", checked: false }, { name: "Assurer une compréhension claire des attentes et des responsabilités de chacun.", checked: false }, { name: "Réviser périodiquement le plan de développement pour refléter les changements ou les ajustements nécessaires.", checked: false }, { name: "Mettre en place des outils de suivi pour surveiller l'avancement par rapport au plan établi.", checked: false }, { name: "Encourager la collaboration et le partage d'informations entre les différentes équipes impliquées dans le projet.", checked: false }, { name: "Documenter les leçons apprises pour améliorer les processus de planification des projets futurs.", checked: false } ] }, { name: "Critères de DoD", items: [ { name: "La tâche a été développée, testée et validée.", checked: false }, { name: "La documentation associée a été mise à jour.", checked: false }, { name: "Tout problème rencontré a été résolu.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff82c", name: "03_Conception de l'architecture système", list: "A faire", start: "2025-09-08T06:00:00.000Z", due: "2025-09-21T15:23:00.000Z", checklists: [ { name: "03_Conception de l'architecture système", items: [ { name: "Créer une vue détaillée de l'architecture système en se basant sur les spécifications fournies.", checked: false }, { name: "Identifier les composants principaux du système, tels que les serveurs, les bases de données, les interfaces utilisateur, etc.", checked: false }, { name: "Déterminer les relations et les interactions entre ces composants.", checked: false }, { name: "Dessiner des diagrammes d'architecture, tels que des diagrammes de flux, des diagrammes de séquence, ou des diagrammes de déploiement pour illustrer la structure du système.", checked: false }, { name: "Sélectionner les technologies appropriées pour chaque composant du système.", checked: false }, { name: "Évaluer les besoins fonctionnels et non fonctionnels pour chaque composant.", checked: false }, { name: "Rechercher et comparer les technologies disponibles pour chaque composant, en tenant compte des avantages, des inconvénients et des contraintes.", checked: false }, { name: "Considérer les normes et les bonnes pratiques de l'industrie lors du choix des technologies.", checked: false }, { name: "Documenter les choix technologiques et les raisons de leur sélection.", checked: false }, { name: "Impliquer les membres de l'équipe technique dans le processus de conception pour garantir la faisabilité et la pertinence des choix.", checked: false }, { name: "Effectuer des analyses de risques pour évaluer les impacts potentiels des choix technologiques sur la sécurité, les performances et la maintenance du système.", checked: false }, { name: "Réaliser des prototypes ou des preuves de concept pour valider les décisions architecturales avant de passer à la mise en œuvre complète.", checked: false }, { name: "Prévoir des revues de conception régulières pour permettre aux membres de l'équipe de donner leur avis et de proposer des améliorations.", checked: false } ] }, { name: "Critères de DoR", items: [ { name: "Les spécifications de la tâche sont clairement définies.", checked: false }, { name: "Toutes les ressources nécessaires sont disponibles.", checked: false }, { name: "Les dépendances éventuelles sont identifiées et traitées.", checked: false } ] }, { name: "Critères de DoD", items: [ { name: "La tâche a été développée, testée et validée.", checked: false }, { name: "La documentation associée a été mise à jour.", checked: false }, { name: "Tout problème rencontré a été résolu.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff82e", name: "04_Mise en place de l'infrastructure technique", list: "A faire", start: "2025-09-22T06:00:00.000Z", due: "2025-10-05T15:23:00.000Z", checklists: [ { name: "04_Mise en place de l'infrastructure technique", items: [ { name: "Acquérir et configurer le matériel requis, y compris les serveurs web et les serveurs de base de données.", checked: false }, { name: "Identifier les besoins matériels en fonction des spécifications de l'architecture système.", checked: false }, { name: "Procéder à l'achat ou à la location du matériel nécessaire en fonction des exigences de performance, de capacité et de disponibilité.", checked: false }, { name: "Installer et configurer les serveurs physiques ou virtuels selon les recommandations du fabricant et les bonnes pratiques en matière de sécurité.", checked: false }, { name: "Installer et configurer les logiciels nécessaires, tels que le système d'exploitation serveur, le serveur web et le système de gestion de base de données.", checked: false }, { name: "Sélectionner les versions appropriées des logiciels en fonction des exigences du projet et des compatibilités matérielles.", checked: false }, { name: "Installer le système d'exploitation serveur sur les serveurs et effectuer les configurations initiales, telles que la configuration du réseau et des comptes utilisateur.", checked: false }, { name: "Configurer et sécuriser le serveur web (par exemple, Apache, Nginx) en fonction des meilleures pratiques de l'industrie et des recommandations de sécurité.", checked: false }, { name: "Installer et configurer le système de gestion de base de données (par exemple, MySQL, PostgreSQL, MongoDB) en fonction des besoins de stockage et de performance du projet.", checked: false }, { name: "Mettre en place des sauvegardes régulières pour assurer la disponibilité des données en cas de défaillance matérielle ou de sinistre.", checked: false }, { name: "Effectuer des tests de performance pour évaluer les performances de l'infrastructure et identifier les goulots d'étranglement potentiels.", checked: false }, { name: "Documenter les configurations et les procédures d'installation pour faciliter la maintenance et le dépannage futurs.", checked: false }, { name: "Former les membres de l'équipe sur l'utilisation et la gestion de l'infrastructure technique afin d'assurer une exploitation efficace et sécurisée.", checked: false }, { name: "Mise en place de la surveillance et de l'alerte : Installez des outils de surveillance pour surveiller les performances du système, la disponibilité des services et détecter les incidents potentiels. Configurez des alertes pour être informé rapidement en cas de problèmes.", checked: false }, { name: "Automatisation des tâches récurrentes : Mettez en place des scripts ou des outils d'automatisation pour simplifier les tâches répétitives telles que la gestion des sauvegardes, les mises à jour logicielles et la surveillance du système.", checked: false }, { name: "Gestion de la capacité : Mettez en place des processus pour surveiller l'utilisation des ressources et anticiper les besoins futurs en capacité. Planifiez des mises à niveau matérielles ou des ajustements de configuration en conséquence.", checked: false }, { name: "Sécurisation des accès : Implémentez des mesures de sécurité robustes pour contrôler l'accès aux serveurs, aux bases de données et aux données sensibles. Cela peut inclure l'utilisation de pare-feu, de VPN, de méthodes d'authentification forte et de chiffrement des données.", checked: false }, { name: "Gestion des changements : Établissez un processus formel pour gérer les changements dans l'infrastructure, en incluant l'évaluation des risques, l'approbation des modifications et la documentation des changements apportés.", checked: false }, { name: "Gestion des incidents : Développez un plan de gestion des incidents pour réagir rapidement aux pannes et aux problèmes de performance. Définissez des procédures pour la résolution des incidents, la communication avec les parties prenantes et l'apprentissage des leçons pour l'avenir.", checked: false }, { name: "Audit de sécurité : Planifiez des audits réguliers de sécurité pour évaluer l'efficacité des mesures de sécurité mises en place et identifier les domaines à améliorer. Utilisez les résultats des audits pour ajuster et renforcer la sécurité de l'infrastructure.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff84a", name: "05_Définir les spécifications détaillées de la plateforme de réservation", list: "A faire", start: "2025-10-06T06:00:00.000Z", due: "2025-10-19T15:23:00.000Z", checklists: [ { name: "05_Définir les spécifications détaillées de la plateforme de réservation", items: [ { name: "Liste des fonctionnalités principales attendues, telles que la recherche d'événements, la sélection de tickets et le processus de paiement.", checked: false }, { name: "Clarification des fonctionnalités complémentaires, telles que la création de compte utilisateur, la gestion du panier et la consultation de l'historique des réservations.", checked: false }, { name: "Description détaillée de chaque fonctionnalité, y compris son objectif, son flux de processus et ses interactions avec d'autres composants de la plateforme.", checked: false }, { name: "Spécification des options de personnalisation disponibles pour les utilisateurs, telles que le choix du type de ticket, les préférences de sièges, etc.", checked: false }, { name: "Définition des exigences ergonomiques pour assurer une expérience utilisateur optimale.", checked: false }, { name: "Spécification des critères de convivialité, tels que la facilité de navigation, la clarté des instructions et l'accessibilité pour les personnes handicapées.", checked: false }, { name: "Création de maquettes ou de wireframes pour visualiser la disposition et la navigation de l'interface.", checked: false }, { name: "Validation des maquettes avec des utilisateurs potentiels pour recueillir des retours et des suggestions d'amélioration.", checked: false }, { name: "Définition des exigences de sécurité pour protéger les données des utilisateurs, telles que le cryptage des informations sensibles et la prévention des attaques par injection SQL.", checked: false }, { name: "Spécification des mécanismes d'authentification et de gestion des sessions for garantir l'intégrité et la confidentialité des comptes utilisateur.", checked: false }, { name: "Assurer la compatibilité avec différents navigateurs web, y compris Chrome, Firefox, Safari et Edge.", checked: false }, { name: "Vérification de la compatibilité avec les appareils mobiles, en particulier les smartphones et les tablettes, pour une expérience utilisateur cohérente sur tous les périphériques.", checked: false }, { name: "Identification des besoins en internationalisation pour rendre la plateforme accessible à un public mondial.", checked: false }, { name: "Spécification des exigences de localisation pour prendre en charge plusieurs langues, devises et formats de date.", checked: false }, { name: "Développement de scénarios de test pour valider chaque fonctionnalité par rapport aux spécifications définies.", checked: false }, { name: "Mise en place d'un processus de validation avec des utilisateurs réels pour évaluer l'expérience utilisateur et identifier les éventuels problèmes d'utilisation.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff84c", name: "06_Développer l'interface utilisateur", list: "A faire", start: "2025-10-20T06:00:00.000Z", due: "2025-11-02T16:23:00.000Z", checklists: [ { name: "06_Développer l'interface utilisateur", items: [ { name: "Création de maquettes ou de wireframes pour visualiser l'interface utilisateur.", checked: false }, { name: "Validation des maquettes avec des utilisateurs potentiels.", checked: false }, { name: "Définition de la structure de la page.", checked: false }, { name: "Placement intuitif des éléments pour une navigation fluide.", checked: false }, { name: "Mise en place d'une grille ou d'une liste d'événements.", checked: false }, { name: "Inclusion de visuels attractifs pour aider les utilisateurs à choisir.", checked: false }, { name: "Ajout de fonctionnalités de filtrage pour rechercher des événements.", checked: false }, { name: "Implémentation de filtres dynamiques.", checked: false }, { name: "Intégration d'une fonctionnalité de sélection de tickets.", checked: false }, { name: "Affichage clair des options disponibles.", checked: false }, { name: "Mise en place d'une vue détaillée pour chaque ticket sélectionné.", checked: false }, { name: "Ajout de fonctionnalités interactives.", checked: false }, { name: "Mise en place de feedback visuel pour indiquer les actions.", checked: false }, { name: "Test de l'interface sur différents navigateurs web.", checked: false }, { name: "Vérification de l'interface sur différents appareils.", checked: false }, { name: "Développement de scénarios de test pour évaluer la convivialité et la fonctionnalité.", checked: false }, { name: "Mise en place d'un processus de validation avec des utilisateurs réels.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff84e", name: "07_Mettre en place le processus de paiement en ligne sécurisé", list: "A faire", start: "2025-11-03T07:00:00.000Z", due: "2025-11-16T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "Évaluation des différentes solutions de paiement en ligne disponibles telles que PayPal, Stripe, Square, etc.", checked: false }, { name: "Sélection de la solution qui répond le mieux aux besoins spécifiques du projet en termes de fonctionnalités, de sécurité et de coût.", checked: false }, { name: "Création d'un compte marchand sur la plateforme de paiement choisie.", checked: false }, { name: "Configuration des paramètres du compte, y compris les informations bancaires, les options de paiement acceptées et les notifications.", checked: false }, { name: "Intégration de l'API de la solution de paiement sélectionnée dans l'architecture de la plateforme de réservation.", checked: false }, { name: "Configuration des paramètres d'intégration, tels que les clés d'API et les identifiants de compte marchand.", checked: false }, { name: "Création des pages de paiement sécurisé pour les différentes étapes du processus de réservation, y compris la sélection des tickets, la saisie des informations de paiement et la confirmation de la commande.", checked: false }, { name: "Intégration des éléments d'interface utilisateur fournis par la solution de paiement, tels que les formulaires de paiement et les boutons d'action.", checked: false }, { name: "Mise en place de la logique métier pour traiter les transactions, y compris la validation des paiements, la génération de reçus et la gestion des annulations et des remboursements.", checked: false }, { name: "Configuration des notifications par e-mail pour informer les utilisateurs des mises à jour sur leur commande et leur paiement.", checked: false }, { name: "Réalisation de tests unitaires pour chaque étape du processus de paiement, en simulant différentes situations telles que les paiements réussis, les paiements refusés et les erreurs de traitement.", checked: false }, { name: "Exécution de tests d'intégration pour vérifier l'interaction correcte entre la plateforme de réservation et la solution de paiement.", checked: false }, { name: "Réalisation de tests de sécurité pour évaluer la robustesse du processus de paiement et détecter les éventuelles vulnérabilités.", checked: false }, { name: "Configuration des paramètres de sécurité recommandés par la solution de paiement, tels que le cryptage des données sensibles et la protection contre la fraude.", checked: false }, { name: "Vérification de la conformité aux normes de sécurité et de confidentialité, telles que PCI DSS (Payment Card Industry Data Security Standard).", checked: false }, { name: "Mise en place d'un support client pour aider les utilisateurs en cas de problème ou de question concernant le processus de paiement.", checked: false }, { name: "Documentation détaillée du processus de paiement pour les utilisateurs finaux, y compris les instructions pour effectuer un paiement en ligne.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff850", name: "08_Tester la plateforme de réservation", list: "A faire", start: "2025-11-17T07:00:00.000Z", due: "2025-11-30T16:23:00.000Z", checklists: [ { name: "Test de la plateforme de réservation", items: [ { name: "Développement d'un plan de test détaillé couvrant toutes les fonctionnalités principales de la plateforme de réservation.", checked: false }, { name: "Identification des scénarios d'utilisation clés à tester, y compris la réservation de tickets, le processus de paiement, etc.", checked: false }, { name: "Vérification de la fonctionnalité de réservation de tickets pour différents types de billets (individuel, duo, familial) en utilisant des données de test.", checked: false }, { name: "Test du processus de paiement en ligne pour s'assurer que les transactions sont correctement traitées et que les utilisateurs peuvent payer avec succès.", checked: false }, { name: "Évaluation de l'interface utilisateur pour s'assurer qu'elle est intuitive et conviviale.", checked: false }, { name: "Réalisation de tests d'utilisabilité avec des utilisateurs réels pour recueillir des retours sur l'expérience utilisateur et identifier les éventuelles difficultés.", checked: false }, { name: "Vérification de la compatibilité de la plateforme sur différents navigateurs web (Chrome, Firefox, Safari, Edge, etc.).", checked: false }, { name: "Test de la plateforme sur différents appareils (ordinateurs de bureau, smartphones, tablettes) pour garantir une expérience cohérente.", checked: false }, { name: "Évaluation des performances du système en simulant un nombre élevé d'utilisateurs pour vérifier la capacité de la plateforme à gérer la charge.", checked: false }, { name: "Mesure du temps de réponse du système pour s'assurer qu'il reste dans les limites spécifiées dans les exigences non fonctionnelles.", checked: false }, { name: "Réalisation de tests de sécurité pour détecter les éventuelles vulnérabilités dans la plateforme, y compris les attaques par injection SQL, les failles de sécurité, etc.", checked: false }, { name: "Vérification de la conformité aux normes de sécurité, telles que le cryptage des données utilisateur et la protection contre la fraude.", checked: false }, { name: "Exécution des scénarios de test selon le plan établi, en enregistrant les résultats et les anomalies détectées.", checked: false }, { name: "Vérification que toutes les fonctionnalités testées répondent aux critères d'acceptation définis dans les spécifications techniques.", checked: false }, { name: "Réalisation de tests de régression pour s'assurer qu'aucune nouvelle fonctionnalité n'affecte négativement les fonctionnalités existantes.", checked: false }, { name: "Correction des anomalies détectées et réalisation de tests de validation supplémentaires pour vérifier les corrections.", checked: false }, { name: "Rédaction d'un rapport de test détaillé, comprenant les résultats des tests, les anomalies détectées, les actions correctives prises, etc.", checked: false }, { name: "Documentation des procédures de test pour référence future et pour faciliter la maintenance de la plateforme.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff85c", name: "09_Processus d'authentification sécurisée des utilisateurs", list: "A faire", start: "2025-12-01T07:00:00.000Z", due: "2025-12-31T16:23:00.000Z", checklists: [ { name: "Identification des méthodes d'authentification", items: [ { name: "Identification par e-mail/mot de passe.", checked: false }, { name: "Authentification à deux facteurs (2FA).", checked: false } ] }, { name: "Définition des exigences de sécurité", items: [ { name: "Longueur minimale des mots de passe.", checked: false }, { name: "Utilisation de caractères spéciaux.", checked: false }, { name: "Politique d'expiration des mots de passe.", checked: false }, { name: "Blocage après plusieurs tentatives infructueuses.", checked: false }, { name: "Verrouillage automatique des comptes.", checked: false }, { name: "Notifications en cas d'activité suspecte.", checked: false }, { name: "Expiration automatique des sessions.", checked: false }, { name: "Déconnexion automatique des utilisateurs.", checked: false } ] }, { name: "Développement des fonctionnalités d'inscription et de connexion", items: [ { name: "Conception d'une interface utilisateur intuitive avec des champs clairement définis pour collecter les informations nécessaires à l'inscription.", checked: false }, { name: "Inclusion de champs tels que l'adresse e-mail, le mot de passe, le prénom, le nom, etc.", checked: false }, { name: "Implémentation de mécanismes de validation côté client pour vérifier la validité des données saisies avant leur soumission.", checked: false }, { name: "Conception d'une interface utilisateur ergonomique pour faciliter la saisie des informations de connexion.", checked: false }, { name: "Intégration de mécanismes de sécurité, comme la protection contre les attaques par force brute.", checked: false }, { name: "Inclusion d'options de récupération de mot de passe, telles qu'un lien de réinitialisation envoyé par e-mail.", checked: false }, { name: "Mise en place d'une base de données sécurisée pour stocker les informations des utilisateurs, en utilisant des pratiques de hachage sécurisé pour les mots de passe.", checked: false }, { name: "Développement d'un tableau de bord utilisateur permettant aux utilisateurs de gérer leur compte.", checked: false }, { name: "Envoi d'e-mails de confirmation après l'inscription, avec un lien de vérification pour activer le compte utilisateur.", checked: false }, { name: "Configuration de messages d'erreur clairs et explicites pour guider les utilisateurs en cas de problème.", checked: false }, { name: "Développement d'une interface utilisateur réactive pour différentes tailles d'écran et appareils.", checked: false }, { name: "Test de compatibilité sur une gamme d'appareils et de navigateurs populaires.", checked: false } ] }, { name: "Implémentation des mesures de sécurité supplémentaires", items: [ { name: "Utilisation d'un algorithme de hachage sécurisé pour stocker les mots de passe.", checked: false }, { name: "Mise en place d'une politique de verrouillage des comptes après un nombre spécifié de tentatives de connexion infructueuses.", checked: false }, { name: "Utilisation de jetons d'authentification à durée de vie limitée pour les sessions utilisateur.", checked: false }, { name: "Réalisation de tests d'intrusion réguliers pour identifier les failles de sécurité potentielles.", checked: false }, { name: "Sensibilisation et formation des développeurs et des utilisateurs finaux aux bonnes pratiques de sécurité.", checked: false }, { name: "Veille sur les dernières vulnérabilités et correctifs de sécurité.", checked: false } ] }, { name: "Gestion des sessions et cryptage", items: [ { name: "Mise en place d'un système de gestion des sessions utilisateur.", checked: false }, { name: "Configuration des sessions pour expirer après une période d'inactivité définie.", checked: false }, { name: "Utilisation de protocoles de cryptage sécurisés tels que HTTPS.", checked: false }, { name: "Cryptage des mots de passe utilisateur avant leur stockage en base de données.", checked: false } ] }, { name: "Contrôles d'accès basés sur les rôles", items: [ { name: "Mise en place de contrôles d'accès basés sur les rôles.", checked: false }, { name: "Configuration des autorisations pour définir les actions que chaque type d'utilisateur est autorisé à effectuer.", checked: false } ] }, { name: "Tests et documentation", items: [ { name: "Réalisation de tests de pénétration pour évaluer la résistance du processus d'authentification.", checked: false }, { name: "Exécution de tests de sécurité automatisés pour identifier les éventuelles vulnérabilités.", checked: false }, { name: "Rédaction d'une documentation détaillée sur le processus d'authentification.", checked: false }, { name: "Fourniture d'une formation aux utilisateurs sur les meilleures pratiques d'authentification.", checked: false }, { name: "Surveillance continue des journaux d'authentification pour détecter toute activité suspecte.", checked: false }, { name: "Mise à jour régulière du processus d'authentification en fonction des nouvelles menaces.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff852", name: "10_Effectuer des tests approfondis pour s'assurer que le processus d'authentification est robuste et sécurisé.", list: "A faire", start: "2026-01-06T07:00:00.000Z", due: "2026-01-18T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "Vérification que les utilisateurs peuvent se connecter avec succès en utilisant des identifiants valides (adresse e-mail et mot de passe)", checked: false }, { name: "Vérification que le processus de connexion est fluide et ne présente pas de problèmes de performance ou de convivialité", checked: false }, { name: "Vérification que les utilisateurs ne peuvent pas accéder au système en utilisant des identifiants invalides", checked: false }, { name: "Vérification que les comptes sont bloqués après un certain nombre de tentatives de connexion infructueuses, conformément à la politique de sécurité définie", checked: false }, { name: "Vérification que les mots de passe sont correctement hachés et salés avant d'être stockés dans la base de données", checked: false }, { name: "Vérification que les utilisateurs peuvent créer des mots de passe forts et que les exigences de complexité sont appliquées de manière appropriée", checked: false }, { name: "Vérification que les mots de passe sont stockés de manière sécurisée et ne sont pas exposés en clair dans le système", checked: false }, { name: "Vérification que les utilisateurs peuvent activer et configurer l'authentification à deux facteurs pour leur compte", checked: false }, { name: "Vérification que le processus d'authentification à deux facteurs fonctionne correctement et nécessite une confirmation supplémentaire lors de la connexion", checked: false }, { name: "Vérification que les utilisateurs peuvent réinitialiser leur mot de passe en cas d'oubli en suivant un processus sécurisé de réinitialisation par e-mail ou par SMS", checked: false }, { name: "Vérification que le processus de réinitialisation de mot de passe est sécurisé et ne permet pas à des tiers non autorisés d'accéder au compte", checked: false }, { name: "Vérification que les sessions utilisateur sont correctement gérées et que les jetons d'authentification sont valides et sécurisés", checked: false }, { name: "Vérification que les sessions expirées sont correctement nettoyées et que les utilisateurs sont déconnectés après une période d'inactivité définie", checked: false }, { name: "Vérification que les mécanismes anti-captchas et anti-robots sont efficaces pour empêcher les attaques automatisées", checked: false }, { name: "Vérification que toutes les communications entre le client et le serveur sont sécurisées à l'aide de protocoles cryptographiques tels que HTTPS", checked: false }, { name: "Vérification que le processus d'authentification est performant et peut gérer un volume élevé de demandes de connexion simultanées sans compromettre la sécurité", checked: false }, { name: "Vérification que le processus d'authentification fonctionne correctement sur différents navigateurs web et appareils, y compris les ordinateurs de bureau, les tablettes et les smartphones", checked: false }, { name: "Vérification que toutes les activités d'authentification sont correctement journalisées et que les journaux sont surveillées régulièrement pour les activités suspectes", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff854", name: "11_Effectuer des tests d'intégration", list: "A faire", start: "2026-01-19T07:00:00.000Z", due: "2026-02-01T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "Développer un plan de test détaillé qui couvre toutes les interactions entre les fonctionnalités.", checked: false }, { name: "Identifier les scénarios d'utilisation principaux à tester, y compris les cas d'utilisation normaux et les cas d'utilisation exceptionnels.", checked: false }, { name: "Mettre en place un environnement de test qui reproduit fidèlement l'environnement de production.", checked: false }, { name: "Assurer que toutes les fonctionnalités nécessaires sont disponibles dans l'environnement de test, y compris les bases de données et les services tiers.", checked: false }, { name: "Tester la navigation à travers l'interface utilisateur, en vérifiant que les utilisateurs peuvent parcourir les différentes sections du site et accéder aux fonctionnalités de réservation et de paiement.", checked: false }, { name: "Vérifier que les options de choix de ticket (individuel, duo, familial) sont correctement affichées et que les utilisateurs peuvent sélectionner les tickets désirés.", checked: false }, { name: "Tester le processus d'authentification, en vérifiant que les utilisateurs peuvent se connecter avec succès et accéder à leur compte.", checked: false }, { name: "Vérifier que le processus de paiement en ligne fonctionne correctement et que les paiements sont traités avec succès.", checked: false }, { name: "Vérifier que les fonctionnalités d'inscription et de connexion interagissent correctement avec le processus d'authentification.", checked: false }, { name: "Tester les mesures de sécurité, en vérifiant que le hachage des mots de passe et la protection contre les attaques par force brute sont correctement intégrés dans le processus d'authentification.", checked: false }, { name: "Vérifier que les mécanismes d'authentification à deux facteurs sont correctement intégrés et fonctionnent comme prévu.", checked: false }, { name: "Tester la gestion des erreurs et des exceptions, en vérifiant que le système gère correctement les situations exceptionnelles et renvoie des messages d'erreur appropriés aux utilisateurs.", checked: false }, { name: "Tester la compatibilité multiplateforme, en vérifiant que les fonctionnalités interagissent correctement sur différents navigateurs web et appareils.", checked: false }, { name: "Effectuer des tests de performance pour vérifier que le système peut gérer un volume élevé de demandes simultanées sans compromettre les performances.", checked: false }, { name: "Analyser les résultats des tests d'intégration pour identifier les problèmes et les défauts.", checked: false }, { name: "Corriger les problèmes identifiés et effectuer des tests supplémentaires pour vérifier que les corrections ont été efficaces.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff856", name: "12_Mettre en place des journaux d'audit", list: "A faire", start: "2026-02-02T07:00:00.000Z", due: "2026-02-15T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "1. Déterminez les événements et les actions qui doivent être enregistrés dans les journaux d'audit. Cela peut inclure les connexions, les réservations de tickets, les modifications de compte utilisateur, les tentatives de connexion infructueuses, etc.", checked: false }, { name: "2. Choisissez un format standard pour les journaux d'audit, tel que JSON, XML ou CSV.", checked: false }, { name: "3. Déterminez les informations à inclure dans chaque entrée de journal, telles que la date et l'heure de l'événement, l'identifiant de l'utilisateur, l'action effectuée, l'adresse IP, etc.", checked: false }, { name: "4. Configurez le système de journalisation de votre application pour enregistrer les événements d'audit dans des fichiers de journal dédiés.", checked: false }, { name: "5. Assurez-vous que les journaux d'audit sont protégés contre les accès non autorisés et que seuls les utilisateurs autorisés peuvent y accéder.", checked: false }, { name: "6. Intégrez la fonctionnalité de journalisation dans le code de l'application pour enregistrer les événements d'audit au fur et à mesure qu'ils se produisent.", checked: false }, { name: "7. Utilisez des bibliothèques de journalisation standard dans votre langage de programmation pour simplifier le processus d'implémentation.", checked: false }, { name: "8. Enregistrez les événements pertinents dans les journaux d'audit à chaque fois qu'une action est effectuée sur la plateforme. Cela peut être réalisé en insérant des instructions de journalisation aux points appropriés du code.", checked: false }, { name: "9. Configurez une stratégie de rotation des journaux pour garantir que les fichiers de journal ne deviennent pas trop volumineux et pour conserver l'historique des événements sur une période définie.", checked: false }, { name: "10. Assurez-vous que les journaux d'audit sont stockés de manière sécurisée et conformément aux exigences de confidentialité des données.", checked: false }, { name: "11. Mettez en place un processus de surveillance des journaux d'audit pour détecter les activités suspectes ou non autorisées.", checked: false }, { name: "12. Analysez régulièrement les journaux d'audit pour identifier les tendances, les modèles et les problèmes potentiels liés à l'utilisation de la plateforme.", checked: false }, { name: "13. Documentez les événements enregistrés dans les journaux d'audit ainsi que les mesures prises pour assurer la traçabilité des actions sur la plateforme.", checked: false }, { name: "14. Assurez-vous que la mise en place des journaux d'audit est conforme aux réglementations de confidentialité des données et aux exigences de conformité applicables.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff858", name: "13_Déployer des mécanismes de gestion des erreurs", list: "A faire", start: "2026-02-16T07:00:00.000Z", due: "2026-03-01T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "1. Identifiez les points critiques de l'application où des erreurs peuvent survenir et affecter négativement l'expérience utilisateur, tels que le processus de réservation, le traitement des paiements, etc.", checked: false }, { name: "2. Implémentez une gestion appropriée des exceptions dans le code pour intercepter et traiter les erreurs de manière proactive.", checked: false }, { name: "3. Utilisez des blocs try-catch ou des gestionnaires d'erreurs spécifiques pour capturer les exceptions et éviter les arrêts inattendus de l'application.", checked: false }, { name: "4. Configurez un système de journalisation des erreurs pour enregistrer les détails des erreurs rencontrées, y compris les informations sur l'utilisateur, le contexte de l'erreur, etc.", checked: false }, { name: "5. Assurez-vous que les messages d'erreur sont suffisamment descriptifs pour faciliter le débogage ultérieur.", checked: false }, { name: "6. Mettez en place des notifications d'erreur en temps réel pour alerter l'équipe de développement ou d'assistance dès qu'une erreur critique se produit.", checked: false }, { name: "7. Utilisez des canaux de notification appropriés tels que les e-mails, les SMS ou les systèmes de messagerie interne.", checked: false }, { name: "8. Implémentez des mécanismes de gestion des erreurs côté client pour fournir des retours d'informations clairs aux utilisateurs en cas d'échec d'une action, par exemple lors du remplissage d'un formulaire de réservation.", checked: false }, { name: "9. Affichez des messages d'erreur conviviaux et des instructions sur la manière de résoudre le problème rencontré.", checked: false }, { name: "10. Effectuez des tests approfondis pour simuler des situations exceptionnelles et vérifier que les mécanismes de gestion des erreurs fonctionnent comme prévu.", checked: false }, { name: "11. Testez les limites du système en injectant des données incorrectes ou en simulant des défaillances matérielles ou logicielles.", checked: false }, { name: "12. Mettez en place des mesures de redondance pour les composants critiques du système afin de garantir une disponibilité continue en cas de défaillance d'un serveur ou d'un service.", checked: false }, { name: "13. Utilisez des stratégies de mise en cache et de mise en attente pour atténuer les effets des pics de charge ou des ralentissements temporaires.", checked: false }, { name: "14. Mettez en place un système de surveillance continue pour suivre les performances de l'application en temps réel et détecter les signes précurseurs de problèmes potentiels.", checked: false }, { name: "15. Utilisez des outils de surveillance des performances tels que des tableaux de bord de santé du système et des alertes de seuil pour intervenir rapidement en cas de dégradation des performances.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff85a", name: "14_Documenter les fonctionnalités développées ainsi que les procédures de déploiement", list: "A faire", start: "2026-03-02T07:00:00.000Z", due: "2026-03-15T16:23:00.000Z", checklists: [ { name: "Checklist", items: [ { name: "1. Dressez la liste de toutes les fonctionnalités développées pour la plateforme de réservation, telles que la sélection de tickets, le processus de paiement, l'authentification des utilisateurs, etc.", checked: false }, { name: "2. Fournissez pour chaque fonctionnalité une description détaillée de son objectif, de son utilisation et de son impact sur l'expérience utilisateur.", checked: false }, { name: "3. Incluez des captures d'écran illustrant chaque fonctionnalité, avec des annotations pour expliquer les différentes étapes et options disponibles.", checked: false }, { name: "4. Créez des guides utilisateur détaillés pour chaque fonctionnalité, fournissant des instructions étape par étape sur la manière d'utiliser efficacement la plateforme.", checked: false }, { name: "5. Faites référence aux spécifications techniques définies précédemment pour chaque fonctionnalité, en mettant en évidence comment elles ont été implémentées et respectées.", checked: false }, { name: "6. Incluez des exemples d'utilisation de chaque fonctionnalité, en montrant comment elles peuvent être appliquées dans différents scénarios d'utilisation.", checked: false }, { name: "7. Décrivez les prérequis système nécessaires pour déployer la plateforme de réservation, y compris les dépendances logicielles, les versions requises, etc.", checked: false }, { name: "8. Fournissez des instructions étape par étape pour installer et configurer l'application sur un environnement de serveur, en incluant les paramètres de configuration nécessaires.", checked: false }, { name: "9. Expliquez comment déployer et configurer la base de données nécessaire pour stocker les informations des utilisateurs, des tickets et des réservations.", checked: false }, { name: "10. Donnez des directives sur la configuration du serveur web pour héberger l'application, y compris la gestion des certificats SSL, la configuration des hôtes virtuels, etc.", checked: false }, { name: "11. Si des scripts de déploiement automatisé ont été développés, fournissez des instructions sur leur utilisation et leur configuration.", checked: false }, { name: "12. Décrivez les tests de déploiement à effectuer pour s'assurer que l'application est correctement installée et fonctionnelle sur l'environnement cible.", checked: false }, { name: "13. Incluez des instructions sur la manière de sauvegarder régulièrement les données de l'application et de récupérer le système en cas de panne ou de perte de données.", checked: false }, { name: "14. Fournissez des informations sur les procédures de maintenance préventive, les mises à jour logicielles et les canaux de support disponibles pour les utilisateurs.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff830", name: "15_Développement des fonctionnalités avancées", list: "A faire", start: "2026-03-16T07:00:00.000Z", due: "2026-04-05T15:23:00.000Z", checklists: [ { name: "06_Développement des fonctionnalités avancées", items: [ { name: "Ajouter des fonctionnalités avancées telles que la réservation de tickets individuels, en duo et familiaux.", checked: false }, { name: "Analyser les besoins des utilisateurs pour déterminer les types de réservations les plus courants et les fonctionnalités avancées nécessaires.", checked: false }, { name: "Développer des options de réservation flexibles permettant aux utilisateurs de choisir différents types de billets (individuels, en duo, familiaux, etc.).", checked: false }, { name: "Mettre en œuvre un système de gestion des disponibilités pour éviter les conflits de réservation et assurer une expérience utilisateur fluide.", checked: false }, { name: "Tester les nouvelles fonctionnalités pour s'assurer qu'elles sont faciles à utiliser et qu'elles fonctionnent correctement dans différentes situations.", checked: false }, { name: "Intégrer des mécanismes de sécurité robustes pour la protection des données utilisateur.", checked: false }, { name: "Identifier les données sensibles des utilisateurs stockées dans le système, telles que les informations personnelles et les données de paiement.", checked: false }, { name: "Mettre en place des mesures de sécurité telles que le cryptage des données, l'authentification renforcée et les pare-feu pour protéger les informations sensibles.", checked: false }, { name: "Assurer la conformité aux réglementations sur la protection des données telles que le RGPD (Règlement Général sur la Protection des Données) ou d'autres normes de sécurité applicables.", checked: false }, { name: "Effectuer des tests de sécurité, y compris des tests de pénétration, pour identifier et corriger les vulnérabilités potentielles du système.", checked: false }, { name: "6. Tâches supplémentaires :", checked: false }, { name: "Mettre en place un processus de gestion des correctifs pour assurer une réponse rapide aux nouvelles vulnérabilités de sécurité.", checked: false }, { name: "Former les membres de l'équipe sur les bonnes pratiques de sécurité informatique et la manipulation des données sensibles.", checked: false }, { name: "Élaborer des politiques de confidentialité et des conditions d'utilisation claires pour informer les utilisateurs de la manière dont leurs données seront utilisées et protégées.", checked: false }, { name: "Effectuer régulièrement des audits de sécurité pour évaluer l'efficacité des mesures de sécurité mises en place et identifier les domaines nécessitant des améliorations.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff832", name: "16_Tests et validation", list: "A faire", start: "2026-04-06T06:00:00.000Z", due: "2026-04-19T15:23:00.000Z", checklists: [ { name: "07_Tests et validation", items: [ { name: "Effectuer des tests unitaires, des tests d'intégration et des tests de système pour valider chaque composant du système.", checked: false }, { name: "Développer des tests unitaires pour vérifier le bon fonctionnement des unités individuelles de code, comme les fonctions ou les classes.", checked: false }, { name: "Réaliser des tests d'intégration pour vérifier l'interaction entre différents modules ou composants du système.", checked: false }, { name: "Effectuer des tests de système pour évaluer le système dans son ensemble, en simulant des scénarios d'utilisation réalistes.", checked: false }, { name: "Utiliser des outils de test automatisés pour faciliter l'exécution des tests et assurer une couverture exhaustive.", checked: false }, { name: "Développer des plans de test détaillés pour couvrir tous les scénarios d'utilisation.", checked: false }, { name: "Identifier les différents types de tests nécessaires, tels que les tests de fonctionnalité, les tests de performance, les tests de sécurité, etc.", checked: false }, { name: "Définir les cas de test pour chaque fonctionnalité ou exigence du système, en couvrant les cas normaux, les cas limites et les conditions d'erreur.", checked: false }, { name: "Planifier l'exécution des tests en fonction des priorités et des dépendances entre les différents composants du système.", checked: false }, { name: "Documenter les résultats des tests, y compris les défauts identifiés, les corrections apportées et les validations ultérieures.", checked: false }, { name: "7. Tâches supplémentaires :", checked: false }, { name: "Effectuer des tests d'acceptation utilisateur pour obtenir des retours d'utilisateurs réels sur l'expérience utilisateur et la convivialité du système.", checked: false }, { name: "Mettre en place une infrastructure de test de charge pour évaluer les performances du système sous différentes charges de travail.", checked: false }, { name: "Collaborer avec les parties prenantes pour valider les résultats des tests et obtenir leur approbation avant de passer à la prochaine étape du développement.", checked: false }, { name: "Effectuer des tests de régression pour garantir que les modifications apportées au système n'ont pas introduit de nouveaux défauts ou affecté négativement les fonctionnalités existantes.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff834", name: "17_Déploiement et mise en production", list: "A faire", start: "2026-04-20T06:00:00.000Z", due: "2026-05-10T15:32:00.000Z", checklists: [ { name: "08_Déploiement et mise en production", items: [ { name: "Déployer le système sur l'infrastructure technique préalablement mise en place.", checked: false }, { name: "Préparer les fichiers de déploiement et les artefacts nécessaires pour installer le système sur les serveurs.", checked: false }, { name: "Planifier le déploiement en tenant compte des fenêtres de maintenance et de la disponibilité des utilisateurs.", checked: false }, { name: "Effectuer le déploiement sur les serveurs de production en suivant les procédures et les bonnes pratiques établies.", checked: false }, { name: "Vérifier l'intégrité du déploiement et s'assurer que toutes les fonctionnalités sont opérationnelles.", checked: false }, { name: "Effectuer des tests de charge pour s'assurer que le système peut gérer un grand nombre de réservations.", checked: false }, { name: "Définir les scénarios de test de charge représentatifs des charges de travail attendues dans des conditions réelles.", checked: false }, { name: "Utiliser des outils de test de charge pour simuler des charges élevées et évaluer les performances du système.", checked: false }, { name: "Surveiller les métriques de performance telles que le temps de réponse, la disponibilité du système et l'utilisation des ressources.", checked: false }, { name: "Identifier les goulets d'étranglement et les points de défaillance du système sous charge et prendre des mesures correctives si nécessaire.", checked: false }, { name: "Tâches supplémentaires :", checked: false }, { name: "Mettre en place des procédures de sauvegarde et de restauration pour protéger les données en cas de problème lors du déploiement.", checked: false }, { name: "Effectuer des tests de non-régression après le déploiement pour vérifier que les fonctionnalités existantes n'ont pas été affectées.", checked: false }, { name: "Coordonner avec les équipes opérationnelles pour surveiller le système en production et résoudre rapidement tout problème qui pourrait survenir.", checked: false }, { name: "Communiquer avec les utilisateurs et les parties prenantes pour les informer du déploiement et de tout impact sur l'utilisation du système.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff836", name: "18_Formation et documentation", list: "A faire", start: "2026-05-18T06:00:00.000Z", due: "2026-06-07T15:32:00.000Z", checklists: [ { name: "Formation et documentation", items: [ { name: "Former le personnel sur l'utilisation et la maintenance du système.", checked: false }, { name: "Identifier les utilisateurs clés qui auront besoin de former, notamment les administrateurs système, les gestionnaires de contenu et les utilisateurs finaux.", checked: false }, { name: "Planifier des sessions de formation adaptées au niveau de compétence et aux besoins de chaque groupe d'utilisateurs.", checked: false }, { name: "Fournir des démonstrations pratiques et des exercices pour familiariser les utilisateurs avec les fonctionnalités du système.", checked: false }, { name: "Répondre aux questions et fournir un support supplémentaire pour aider les utilisateurs à surmonter les obstacles rencontrés lors de l'apprentissage.", checked: false }, { name: "Rédiger une documentation utilisateur détaillée et une documentation technique pour référence future.", checked: false }, { name: "Élaborer un manuel d'utilisation contenant des instructions pas à pas sur la manière d'utiliser chaque fonctionnalité du système.", checked: false }, { name: "Inclure des captures d'écran, des exemples et des conseils pratiques pour faciliter la compréhension des utilisateurs.", checked: false }, { name: "Créer une documentation technique pour les administrateurs système, comprenant des informations sur l'architecture du système, la configuration, la maintenance et le dépannage.", checked: false }, { name: "Organiser la documentation de manière logique et facilement accessible, par exemple en utilisant une base de connaissances en ligne ou un système de fichiers bien organisé.", checked: false }, { name: "Tâches supplémentaires :", checked: false }, { name: "Effectuer des sessions de formation supplémentaires pour les nouvelles recrues ou pour les utilisateurs qui ont besoin d'un rafraîchissement.", checked: false }, { name: "Mettre à jour régulièrement la documentation pour refléter les nouvelles fonctionnalités, les changements de configuration ou les meilleures pratiques émergentes.", checked: false }, { name: "Encourager les retours des utilisateurs sur la documentation afin d'identifier les points d'amélioration et de les prendre en compte dans les mises à jour futures.", checked: false }, { name: "Mettre en place un système de support ou une FAQ (Foire Aux Questions) pour répondre aux questions fréquemment posées et fournir un support continu aux utilisateurs.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff838", name: "19_Suivi Gestion de projet", list: "A faire", start: "2026-06-08T06:00:00.000Z", due: "2026-07-31T15:32:00.000Z", checklists: [ { name: "Suivi de Projet", items: [ { name: "1. Établissez un plan de projet détaillé qui définit les étapes clés, les jalons, les ressources requises et les échéances pour chaque phase du projet.", checked: false }, { name: "2. Utilisez des outils de gestion de projet tels que des diagrammes de Gantt, des tableaux Kanban ou des feuilles de calcul pour suivre et documenter l'avancement des tâches et des activités.", checked: false }, { name: "3. Organisez des réunions régulières avec l'équipe du projet pour passer en revue l'état d'avancement, discuter des problèmes potentiels et ajuster le plan si nécessaire.", checked: false }, { name: "4. Identifiez les risques qui pourraient compromettre le succès du projet, tels que les retards de développement, les problèmes de qualité, les pannes matérielles ou les vulnérabilités de sécurité.", checked: false }, { name: "5. Évaluez l'impact et la probabilité de chaque risque identifié, puis développez des stratégies d'atténuation appropriées pour minimiser leur impact sur le projet.", checked: false }, { name: "6. Mettez en œuvre des mesures préventives pour réduire les risques, telles que l'amélioration des processus de développement, la mise en place de sauvegardes régulières, ou la mise en place de mesures de sécurité supplémentaires.", checked: false }, { name: "7. Surveillez activement les risques tout au long du cycle de développement et répondez rapidement aux changements de situation en ajustant les stratégies d'atténuation au besoin.", checked: false }, { name: "8. Mettre en place un tableau Trello ou un outil de gestion de projet similaire pour suivre les tâches, les jalons et les dépendances.", checked: false }, { name: "9. Mettre à jour régulièrement les tâches avec leur statut actuel, les dates d'échéance et les responsables.", checked: false }, { name: "10. Organiser des réunions d'avancement régulières pour discuter de l'état du projet et des éventuels problèmes ou obstacles.", checked: false }, { name: "11. Utiliser des indicateurs de performance clés (KPIs) pour mesurer l'avancement et identifier les domaines nécessitant une attention particulière.", checked: false }, { name: "12. Établir une liste des risques pour le projet, tels que les retards, les problèmes techniques ou les changements de portée.", checked: false }, { name: "13. Évaluer l'impact et la probabilité de chaque risque afin de hiérarchiser les efforts d'atténuation.", checked: false }, { name: "14. Développer des plans de contingence pour les risques les plus critiques, décrivant les actions à prendre en cas de survenance.", checked: false }, { name: "15. Surveiller activement les risques tout au long du projet et mettre à jour les plans d'atténuation en fonction des changements de contexte ou des nouvelles informations.", checked: false }, { name: "16. Encourager la collaboration et la communication au sein de l'équipe en facilitant les échanges d'informations et la résolution collective des problèmes.", checked: false }, { name: "17. Documenter les leçons apprises tout au long du projet pour améliorer les processus et les pratiques de gestion de projet pour les projets futurs.", checked: false }, { name: "18. Impliquer les parties prenantes dans le processus de suivi et de gestion des risques pour obtenir leur soutien et leur engagement continu.", checked: false }, { name: "19. Effectuer des révisions régulières du plan de projet pour tenir compte des changements de portée, des nouveaux risques identifiés et des leçons apprises.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff83a", name: "20_Recherche Utilisateur et Étude de Marché", list: "Backlog", description: "Effectuer des enquêtes auprès des utilisateurs potentiels...", checklists: [ { name: "Recherche Utilisateur et Étude de Marché", items: [ { name: "Effectuer des enquêtes auprès des utilisateurs potentiels.", checked: false }, { name: "Analyser les données démographiques et comportementales.", checked: false }, { name: "Examiner les tendances du marché et les concurrents.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff83c", name: "21_Définition des Personas Utilisateurs", list: "Backlog", description: "Créer des personas utilisateur représentatifs...", checklists: [ { name: "Définition des Personas Utilisateurs", items: [ { name: "Créer des personas utilisateur représentatifs.", checked: false }, { name: "Identifier les besoins et les objectifs de chaque persona.", checked: false }, { name: "Utiliser les personas pour guider la conception et le développement.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff83e", name: "22_Étude de la Concurrence", list: "Backlog", description: "Analyser les forces et les faiblesses des concurrents...", checklists: [ { name: "Étude de la Concurrence", items: [ { name: "Analyser les forces et les faiblesses des concurrents.", checked: false }, { name: "Identifier les fonctionnalités clés et les points de différenciation.", checked: false }, { name: "Tirer des enseignements pour améliorer votre propre plateforme.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff840", name: "23_Évaluation de la Scalabilité", list: "Backlog", description: "Évaluer la capacité du système à évoluer...", checklists: [ { name: "Évaluation de la Scalabilité", items: [ { name: "Évaluer la capacité du système à évoluer.", checked: false }, { name: "Identifier les goulets d'étranglement potentiels.", checked: false }, { name: "Planifier des mesures pour assurer la scalabilité future.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff842", name: "24_Sécurité et Conformité", list: "Backlog", description: "Effectuer une analyse des risques en matière de sécurité...", checklists: [ { name: "Sécurité et Conformité", items: [ { name: "Effectuer une analyse des risques en matière de sécurité.", checked: false }, { name: "Assurer la conformité avec les réglementations applicables.", checked: false }, { name: "Mettre en place des mesures de protection des données.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff844", name: "25_Optimisation des Performances", list: "Backlog", description: "Définir des objectifs de performance clairs...", checklists: [ { name: "Optimisation des Performances", items: [ { name: "Définir des objectifs de performance clairs.", checked: false }, { name: "Effectuer des tests de charge pour évaluer les performances.", checked: false }, { name: "Identifier et résoudre les problèmes de performance.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff846", name: "26_Gestion des Retours Utilisateurs", list: "Backlog", description: "Mettre en place des canaux de communication pour recueillir les retours...", checklists: [ { name: "Gestion des Retours Utilisateurs", items: [ { name: "Mettre en place des canaux de communication pour recueillir les retours.", checked: false }, { name: "Analyser les retours utilisateurs et les intégrer dans les itérations futures.", checked: false }, { name: "Prioriser les fonctionnalités en fonction des retours utilisateurs.", checked: false } ] } ] },
+                { id: "68949a83ff107f6f81eff848", name: "27_Plan de Continuité des Affaires", list: "Backlog", description: "Identifier les scénarios d'incidents potentiels...", checklists: [ { name: "Plan de Continuité des Affaires", items: [ { name: "Identifier les scénarios d'incidents potentiels.", checked: false }, { name: "Élaborer des plans de réponse aux incidents.", checked: false }, { name: "Tester régulièrement le plan de continuité des affaires.", checked: false } ] } ] }
+            ]
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const sections = document.querySelectorAll('main > section');
+            const navButtons = document.querySelectorAll('.nav-button');
+
+            const switchView = (sectionId) => {
+                sections.forEach(section => {
+                    section.classList.toggle('hidden', section.id !== sectionId);
+                });
+                navButtons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.section === sectionId);
+                });
+            };
+
+            navButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    switchView(button.dataset.section);
+                });
+            });
+
+            const updateCardProgressUI = (cardId) => {
+                const card = projectData.cards.find(c => c.id === cardId);
+                if (!card) return;
+
+                let totalItems = 0;
+                let checkedItems = 0;
+                card.checklists.forEach(cl => {
+                    totalItems += cl.items.length;
+                    checkedItems += cl.items.filter(i => i.checked).length;
+                });
+
+                const progress = totalItems > 0 ? (checkedItems / totalItems) * 100 : 0;
+                const progressElement = document.getElementById(`progress-bar-${cardId}`);
+                const percentageElement = document.getElementById(`percentage-${cardId}`);
+
+                if (progressElement) {
+                    progressElement.style.width = `${progress}%`;
+                }
+                if (percentageElement) {
+                    percentageElement.textContent = `${Math.round(progress)}%`;
+                }
+            };
+
+            const setupDashboard = () => {
+                const totalTasks = projectData.cards.length;
+                const todoTasks = projectData.cards.filter(c => c.list === 'A faire').length;
+                const inProgressLists = ['En cours', 'En attente', 'Test (Testing)', 'Bloqué'];
+                const inProgressTasks = projectData.cards.filter(c => inProgressLists.includes(c.list)).length;
+                const doneLists = ['Terminé', 'Livré : Pour les tâches livrées et approuvées'];
+                const doneTasks = projectData.cards.filter(c => doneLists.includes(c.list)).length;
+
+                document.getElementById('total-tasks').textContent = totalTasks;
+                document.getElementById('todo-tasks').textContent = todoTasks;
+                document.getElementById('inprogress-tasks').textContent = inProgressTasks;
+                document.getElementById('done-tasks').textContent = doneTasks;
+                
+                const tasksByList = projectData.lists.map(list => ({
+                    name: list.name,
+                    count: projectData.cards.filter(card => card.list === list.name).length
+                })).filter(list => list.count > 0);
+
+                new Chart(document.getElementById('tasksByListChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: tasksByList.map(l => l.name),
+                        datasets: [{
+                            data: tasksByList.map(l => l.count),
+                            backgroundColor: ['#d8c4b7', '#e9e2de', '#bfa899', '#6d5d52', '#9d8b80', '#f3eee9', '#c8b8ad', '#a79a91'],
+                            borderColor: '#fdfbf7',
+                            borderWidth: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    font: {
+                                        size: 12
+                                    },
+                                    boxWidth: 15,
+                                    padding: 20
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                const checklistProgressContainer = document.getElementById('checklist-progress-container');
+                checklistProgressContainer.innerHTML = ''; // Clear previous content
+                const cardsWithChecklists = projectData.cards.filter(c => c.checklists && c.checklists.length > 0);
+                
+                cardsWithChecklists.forEach(card => {
+                    let totalItems = 0;
+                    let checkedItems = 0;
+                    card.checklists.forEach(cl => {
+                        totalItems += cl.items.length;
+                        checkedItems += cl.items.filter(i => i.checked).length;
+                    });
+
+                    const progress = totalItems > 0 ? (checkedItems / totalItems) * 100 : 0;
+                    
+                    const cardChecklistElement = document.createElement('div');
+                    cardChecklistElement.className = 'bg-gray-50 p-3 rounded-lg shadow-sm';
+                    cardChecklistElement.innerHTML = `
+                        <div class="flex justify-between items-center cursor-pointer" id="checklist-header-${card.id}">
+                            <span class="text-base font-medium text-gray-700">${card.name.substring(0, 35)}${card.name.length > 35 ? '...' : ''}</span>
+                            <div class="flex items-center">
+                                <span id="percentage-${card.id}" class="text-sm font-medium text-gray-700 mr-3">${Math.round(progress)}%</span>
+                                <span class="text-xl text-[#d8c4b7] transform transition-transform duration-300">&#x2304;</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                            <div id="progress-bar-${card.id}" class="bg-[#d8c4b7] h-2.5 rounded-full" style="width: ${progress}%"></div>
+                        </div>
+                        <div id="checklist-details-${card.id}" class="checklist-details-content mt-4 space-y-2">
+                            ${card.checklists.map((cl, clIndex) => `
+                                <div class="border-t border-gray-200 pt-2">
+                                    <h5 class="font-semibold text-gray-600 mb-1">${cl.name}</h5>
+                                    <ul class="space-y-1">
+                                        ${cl.items.map((item, itemIndex) => `
+                                            <li class="checklist-item">
+                                                <input type="checkbox" id="item-${card.id}-${clIndex}-${itemIndex}" 
+                                                       data-card-id="${card.id}" 
+                                                       data-checklist-index="${clIndex}" 
+                                                       data-item-index="${itemIndex}" 
+                                                       ${item.checked ? 'checked' : ''}>
+                                                <label for="item-${card.id}-${clIndex}-${itemIndex}" class="text-gray-600 text-sm">${item.name}</label>
+                                            </li>
+                                        `).join('')}
+                                    </ul>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    checklistProgressContainer.appendChild(cardChecklistElement);
+
+                    const header = document.getElementById(`checklist-header-${card.id}`);
+                    const detailsContent = document.getElementById(`checklist-details-${card.id}`);
+                    const arrowIcon = header.querySelector('span:last-child');
+
+                    header.addEventListener('click', () => {
+                        detailsContent.classList.toggle('expanded');
+                        arrowIcon.classList.toggle('rotate-180');
+                    });
+
+                    detailsContent.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                        checkbox.addEventListener('change', (event) => {
+                            const cardId = event.target.dataset.cardId;
+                            const clIndex = parseInt(event.target.dataset.checklistIndex);
+                            const itemIndex = parseInt(event.target.dataset.itemIndex);
+
+                            const targetCard = projectData.cards.find(c => c.id === cardId);
+                            if (targetCard && targetCard.checklists[clIndex] && targetCard.checklists[clIndex].items[itemIndex]) {
+                                targetCard.checklists[clIndex].items[itemIndex].checked = event.target.checked;
+                                updateCardProgressUI(cardId);
+                            }
+                        });
+                    });
+                });
+            };
+
+            const setupTimeline = () => {
+                const ganttData = projectData.cards
+                    .filter(card => card.start && card.due)
+                    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+                new Chart(document.getElementById('ganttChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ganttData.map(c => c.name.length > 16 ? c.name.substring(0, 16) + '...' : c.name),
+                        datasets: [{
+                            label: 'Durée de la tâche',
+                            data: ganttData.map(c => [new Date(c.start).getTime(), new Date(c.due).getTime()]),
+                            backgroundColor: '#d8c4b7',
+                            borderColor: '#bfa899',
+                            borderWidth: 1,
+                            barPercentage: 0.5,
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                time: {
+                                    unit: 'day',
+                                    tooltipFormat: 'dd MMM yyyy', /* Corrected format */
+                                    displayFormats: {
+                                        day: 'dd MMM' /* Corrected format */
+                                    }
+                                },
+                                min: new Date(Math.min(...ganttData.map(c => new Date(c.start).getTime()))).toISOString(),
+                                max: new Date(Math.max(...ganttData.map(c => new Date(c.due).getTime()))).toISOString(),
+                                ticks: {
+                                    autoSkip: true,
+                                    maxTicksLimit: 15
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const start = new Date(context.raw[0]).toLocaleDateString('fr-FR');
+                                        const end = new Date(context.raw[1]).toLocaleDateString('fr-FR');
+                                        return `${context.chart.data.labels[context.dataIndex]}: ${start} - ${end}`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+            
+            const taskListContainer = document.getElementById('task-list');
+            const filterContainer = document.querySelector('#tasks .flex-wrap');
+
+            const renderTasks = (filterList = 'all') => {
+                taskListContainer.innerHTML = '';
+                let filteredCards;
+                if (filterList === 'all') {
+                    filteredCards = projectData.cards;
+                } else if (filterList === 'A faire') { // Default filter for "Tâches" section
+                    filteredCards = projectData.cards.filter(card => card.list === 'A faire');
+                } else {
+                    filteredCards = projectData.cards.filter(card => card.list === filterList);
+                }
+
+                if (filteredCards.length === 0) {
+                    taskListContainer.innerHTML = `<p class="text-center text-gray-500">Aucune tâche dans cette liste.</p>`;
+                    return;
+                }
+
+                filteredCards.forEach(card => {
+                    const cardElement = document.createElement('div');
+                    cardElement.className = 'bg-white rounded-xl shadow-md overflow-hidden';
+                    
+                    const checklistsHTML = card.checklists.map(cl => `
+                        <div class="mt-4">
+                            <h4 class="font-semibold text-gray-700">${cl.name}</h4>
+                            <ul class="mt-2 space-y-2">
+                                ${cl.items.map(item => `
+                                    <li class="checklist-item">
+                                        <div class="checklist-item-box"></div>
+                                        <span class="text-gray-600">${item.name}</span>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `).join('');
+
+                    const startDate = card.start ? new Date(card.start).toLocaleDateString('fr-FR') : 'N/A';
+                    const dueDate = card.due ? new Date(card.due).toLocaleDateString('fr-FR') : 'N/A';
+
+                    cardElement.innerHTML = `
+                        <div class="p-4 card-header flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-[#6d5d52]">${card.name}</h3>
+                            <span class="text-3xl text-[#d8c4b7] transform transition-transform duration-300">&#x2304;</span>
+                        </div>
+                        <div class="p-4 border-t border-gray-200 hidden">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 text-sm">
+                                <div><strong class="text-gray-500">Liste:</strong> <span class="font-medium">${card.list}</span></div>
+                                <div><strong class="text-gray-500">Début:</strong> <span class="font-medium">${startDate}</span></div>
+                                <div><strong class="text-gray-500">Échéance:</strong> <span class="font-medium">${dueDate}</span></div>
+                            </div>
+                            ${checklistsHTML}
+                        </div>
+                    `;
+                    taskListContainer.appendChild(cardElement);
+
+                    const header = cardElement.querySelector('.card-header');
+                    const content = cardElement.querySelector('.p-4.hidden');
+                    const icon = header.querySelector('span');
+
+                    header.addEventListener('click', () => {
+                        content.classList.toggle('hidden');
+                        icon.classList.toggle('rotate-180');
+                    });
+                });
+            };
+
+            const setupTaskFilters = () => {
+                const uniqueLists = [...new Set(projectData.cards.map(card => card.list))];
+                filterContainer.innerHTML = ''; // Clear existing buttons before re-rendering
+                
+                // Add "Toutes les listes" button first
+                const allButton = document.createElement('button');
+                allButton.className = 'filter-btn bg-white px-4 py-2 rounded-full text-sm font-semibold shadow-sm';
+                allButton.dataset.list = 'all';
+                allButton.textContent = 'Toutes les listes';
+                filterContainer.appendChild(allButton);
+
+                uniqueLists.forEach(listName => {
+                    const button = document.createElement('button');
+                    button.className = 'filter-btn bg-white px-4 py-2 rounded-full text-sm font-semibold shadow-sm';
+                    button.dataset.list = listName;
+                    button.textContent = listName;
+                    filterContainer.appendChild(button);
+                });
+
+                document.querySelectorAll('.filter-btn').forEach(button => {
+                    button.addEventListener('click', () => {
+                        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('bg-[#d8c4b7]', 'text-white'));
+                        button.classList.add('bg-[#d8c4b7]', 'text-white');
+                        renderTasks(button.dataset.list);
+                    });
+                });
+                
+                // Set default active filter for 'A faire' when tasks section is first viewed
+                const defaultActiveList = 'A faire';
+                const defaultFilterButton = document.querySelector(`.filter-btn[data-list="${defaultActiveList}"]`);
+                if (defaultFilterButton) {
+                    defaultFilterButton.click(); // This will render tasks for 'A faire' and set active class
+                } else {
+                    document.querySelector('.filter-btn[data-list="all"]').click(); // Fallback to 'all' if default not found
+                }
+            };
+
+            setupDashboard();
+            setupTimeline();
+            setupTaskFilters();
+            // Initial view is Dashboard, so no need to call renderTasks here directly.
+            // setupTaskFilters will handle the initial rendering for the 'tasks' section.
+            
+            switchView('dashboard');
+        });
+    </script>
+</body>
+</html>

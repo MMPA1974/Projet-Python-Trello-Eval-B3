@@ -186,7 +186,8 @@
     </div>
 
     <script>
-        const projectData = {
+        // Initial project data (fallback if no local storage data)
+        const initialProjectData = {
             lists: [
                 { name: "Backlog", pos: 0.5 },
                 { name: "A faire", pos: 1 },
@@ -228,7 +229,65 @@
             ]
         };
 
+        // Use a variable to hold the current project data, which will be loaded from localStorage
+        let projectData = initialProjectData;
+
+        const LOCAL_STORAGE_KEY = 'trelloProjectData';
+
+        // Function to save project data to local storage
+        const saveProjectData = () => {
+            try {
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(projectData.cards));
+            } catch (e) {
+                console.error("Error saving to local storage:", e);
+            }
+        };
+
+        // Function to load project data from local storage
+        const loadProjectData = () => {
+            try {
+                const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (storedData) {
+                    const loadedCards = JSON.parse(storedData);
+                    // Merge loaded data with initial data to ensure all cards are present,
+                    // but update 'checked' status from loaded data.
+                    projectData.cards = initialProjectData.cards.map(initialCard => {
+                        const loadedCard = loadedCards.find(lc => lc.id === initialCard.id);
+                        if (loadedCard) {
+                            return {
+                                ...initialCard,
+                                checklists: initialCard.checklists.map((initialCl, clIndex) => {
+                                    const loadedCl = loadedCard.checklists ? loadedCard.checklists[clIndex] : null;
+                                    if (loadedCl) {
+                                        return {
+                                            ...initialCl,
+                                            items: initialCl.items.map((initialItem, itemIndex) => {
+                                                const loadedItem = loadedCl.items ? loadedCl.items[itemIndex] : null;
+                                                return {
+                                                    ...initialItem,
+                                                    checked: loadedItem ? loadedItem.checked : initialItem.checked
+                                                };
+                                            })
+                                        };
+                                    }
+                                    return initialCl;
+                                })
+                            };
+                        }
+                        return initialCard;
+                    });
+                }
+            } catch (e) {
+                console.error("Error loading from local storage:", e);
+                // Fallback to initial data if loading fails
+                projectData = initialProjectData;
+            }
+        };
+
+
         document.addEventListener('DOMContentLoaded', () => {
+            loadProjectData(); // Load data before setting up UI
+
             const sections = document.querySelectorAll('main > section');
             const navButtons = document.querySelectorAll('.nav-button');
 
@@ -268,6 +327,7 @@
                 if (percentageElement) {
                     percentageElement.textContent = `${Math.round(progress)}%`;
                 }
+                saveProjectData(); // Save data after UI update
             };
 
             const setupDashboard = () => {
@@ -287,6 +347,12 @@
                     name: list.name,
                     count: projectData.cards.filter(card => card.list === list.name).length
                 })).filter(list => list.count > 0);
+
+                // Destroy existing chart if it exists to prevent multiple instances
+                const existingChart = Chart.getChart('tasksByListChart');
+                if (existingChart) {
+                    existingChart.destroy();
+                }
 
                 new Chart(document.getElementById('tasksByListChart'), {
                     type: 'doughnut',
@@ -396,6 +462,12 @@
                     .filter(card => card.start && card.due)
                     .sort((a, b) => new Date(a.start) - new Date(b.start));
 
+                // Destroy existing chart if it exists to prevent multiple instances
+                const existingChart = Chart.getChart('ganttChart');
+                if (existingChart) {
+                    existingChart.destroy();
+                }
+
                 new Chart(document.getElementById('ganttChart'), {
                     type: 'bar',
                     data: {
@@ -486,6 +558,7 @@
                 if (percentageText) {
                     percentageText.textContent = `${Math.round(progress)}%`;
                 }
+                saveProjectData(); // Save data after UI update
             };
             
             const taskListContainer = document.getElementById('task-list');
